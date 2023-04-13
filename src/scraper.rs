@@ -1,10 +1,7 @@
-use crate::scraper::structs::{Scraper, SearchResult};
+use crate::structs::{Scraper, SearchResult};
 use color_eyre::Result;
 use scraper::Selector;
-use crate::scraper::selectors::{CHAPTER_IMAGES_PANEL, CHAPTERS, CHAPTERS_LIST, CHAPTERS_PANEL, IMG, RESULTS, RESULTS_PANEL, URL};
-
-pub mod structs;
-mod selectors;
+use crate::selectors::{CHAPTER_IMAGES_PANEL, CHAPTERS, CHAPTERS_LIST, CHAPTERS_PANEL, IMG, RESULTS, RESULTS_PANEL, URL};
 
 impl Scraper {
     pub fn search_manga(&self, query: String) -> Result<Option<Vec<SearchResult>>> {

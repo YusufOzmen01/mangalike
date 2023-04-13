@@ -5,14 +5,16 @@ use std::io::Write;
 use std::ops::Add;
 use std::path::Path;
 use clap::{Arg, ArgAction, Command};
-use crate::scraper::structs::{Scraper, SearchResult};
 use color_eyre::Result;
 use epub_builder::{EpubBuilder, EpubContent, ZipLibrary};
 use reqwest::header::REFERER;
 use crate::manga_list::{add_manga, get_mangas};
+use crate::structs::{Scraper, SearchResult};
 
 mod scraper;
 mod manga_list;
+mod selectors;
+mod structs;
 
 fn main() -> Result<()> {
     let matches = Command::new("mangalike")

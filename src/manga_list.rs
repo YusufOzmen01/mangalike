@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 use color_eyre::Result;
-use crate::scraper::structs::SearchResult;
+use crate::structs::SearchResult;
 
 pub fn add_manga(manga_id: String, manga_name: String, cwd: String) -> Result<()> {
     if Path::new(&cwd).join(format!("[{}] {}", &manga_id, &manga_name)).exists() {
