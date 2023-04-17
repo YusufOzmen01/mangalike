@@ -1,15 +1,16 @@
 use std::env::current_dir;
 use std::fs::File;
-use std::{fs, io};
+use std::{fs, io, thread};
 use std::io::Write;
 use std::ops::Add;
 use std::path::Path;
+use std::sync::Arc;
 use clap::{Arg, ArgAction, Command};
 use color_eyre::Result;
 use epub_builder::{EpubBuilder, EpubContent, ZipLibrary};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reqwest::header::REFERER;
 use crate::manga_list::{add_manga, get_mangas};
+use crate::methods::download_image;
 use crate::structs::{Scraper, SearchResult};
 use crate::utils::{get_manga_starting_chapter};
 
@@ -18,6 +19,7 @@ mod manga_list;
 mod selectors;
 mod structs;
 mod utils;
+mod methods;
 
 fn main() -> Result<()> {
     let matches = Command::new("mangalike")
@@ -198,23 +200,19 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
-            let client = reqwest::blocking::Client::new();
+            let client = Arc::new(reqwest::blocking::Client::new());
 
             let mangas = get_mangas(&current_dir)?;
             if let Some(mangas) = mangas {
                 let m = MultiProgress::new();
 
-                let manga_pb = m.add(ProgressBar::new(mangas.len() as u64));
+                let manga_pb = Arc::new(m.add(ProgressBar::new(mangas.len() as u64)));
 
-                let stopped = ProgressStyle::with_template(
-                    "{msg} [{elapsed_precise}] {bar:40.burgundy/red} {pos:>7}/{len:7}",
-                ).unwrap().progress_chars("▮-");
+                let style = ProgressStyle::with_template(
+                    "{msg} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7}",
+                ).unwrap().progress_chars("##-");
 
-                let started = ProgressStyle::with_template(
-                    "{msg} [{elapsed_precise}] {bar:40.green/green} {pos:>7}/{len:7}",
-                ).unwrap().progress_chars("▮-");
-
-                manga_pb.set_style(started.clone());
+                manga_pb.set_style(style.clone());
                 let mut message = String::from("Manga [Checking]:");
                 for _ in 0..30 - message.len() as u32 {
                     message += " ";
@@ -228,8 +226,8 @@ fn main() -> Result<()> {
                     let chapters = scraper.get_chapters(manga.clone().id.trim().to_string())?;
 
                     if let Some(chapters) = chapters {
-                        let chapter_pb = m.insert_after(&manga_pb, ProgressBar::new(chapters.len() as u64));
-                        chapter_pb.set_style(stopped.clone());
+                        let chapter_pb = Arc::new(m.insert_after(&manga_pb, ProgressBar::new(chapters.len() as u64)));
+                        chapter_pb.set_style(style.clone());
 
                         chapter_pb.inc(1);
 
@@ -265,65 +263,33 @@ fn main() -> Result<()> {
                             let images = scraper.get_chapter_images(manga.clone().id, chapter.clone().id)?;
 
                             if let Some(images) = images {
-                                let image_pb = m.insert_after(&chapter_pb, ProgressBar::new(images.len() as u64));
-                                image_pb.set_style(stopped.clone());
+                                let image_pb = Arc::new(m.insert_after(&chapter_pb, ProgressBar::new(images.len() as u64)));
+                                image_pb.set_style(style.clone());
+
+                                let mut threads = vec![];
 
                                 for (i, image) in images.iter().enumerate() {
-                                    loop {
-                                        let image_path = Path::new(&chapter_folder).join(format!("{}.jpg", i));
-                                        if image_path.exists() {
-                                            let mut message = format!("Manga [{} Checking]:", manga.id);
-                                            for _ in 0..30 - message.len() as u32 {
-                                                message += " ";
-                                            }
+                                    let image_path = Path::new(&chapter_folder.clone()).join(format!("{}.jpg", i));
+                                    let manga_pb = manga_pb.clone();
+                                    let chapter_pb = chapter_pb.clone();
+                                    let image_pb = image_pb.clone();
+                                    let image = image.to_string();
+                                    let manga_id = manga.id.clone();
+                                    let chapter_id = chapter.id.clone();
+                                    let client = client.clone();
 
-                                            manga_pb.set_message(message);
+                                    threads.push(thread::spawn(move || download_image(
+                                        image_path,
+                                        vec![manga_pb, chapter_pb, image_pb].as_slice(),
+                                        image,
+                                        manga_id,
+                                        chapter_id,
+                                        client
+                                    )));
+                                }
 
-                                            let mut message = format!("Chapter [{} Checking]:", chapter.id);
-                                            for _ in 0..30 - message.len() as u32 {
-                                                message += " ";
-                                            }
-                                            chapter_pb.set_message(message);
-
-                                            image_pb.inc(1);
-
-                                            break;
-                                        }
-
-                                        let resp = client.get(image).header(REFERER, "https://chapmanganato.com/").send();
-                                        if let Ok(mut resp) = resp {
-                                            let mut out = File::create(&image_path)?;
-
-                                            io::copy(&mut resp, &mut out)?;
-
-                                            // println!("{}/{} - {}/{}", i+1, chapters.len(), j+1, images.len());
-
-                                            image_pb.set_style(started.clone());
-                                            chapter_pb.set_style(started.clone());
-
-
-                                            let mut message = format!("Manga [{}]:", manga.id);
-                                            for _ in 0..30 - message.len() as u32 {
-                                                message += " ";
-                                            }
-                                            manga_pb.set_message(message);
-
-                                            let mut message = format!("Chapter [{}]:", chapter.id);
-                                            for _ in 0..30 - message.len() as u32 {
-                                                message += " ";
-                                            }
-                                            chapter_pb.set_message(message);
-
-                                            let mut message = String::from("Image:");
-                                            for _ in 0..30 - message.len() as u32 {
-                                                message += " ";
-                                            }
-                                            image_pb.set_message(message);
-                                            image_pb.inc(1);
-
-                                            break;
-                                        }
-                                    }
+                                for t in threads {
+                                    t.join().unwrap()?;
                                 }
                             }
 
