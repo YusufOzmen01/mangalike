@@ -35,7 +35,7 @@ impl Scraper {
 
             mangas.push(SearchResult {
                 title: title.to_string(),
-                id: url.get(1).unwrap().to_string(),
+                id: url.get(1).unwrap().to_string()
             });
         }
 
@@ -76,7 +76,7 @@ impl Scraper {
 
             chapter_vec.push(SearchResult {
                 title: title.to_string(),
-                id: url.get(1).unwrap().to_string(),
+                id: url.get(1).unwrap().to_string()
             });
         }
 

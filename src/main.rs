@@ -10,11 +10,13 @@ use epub_builder::{EpubBuilder, EpubContent, ZipLibrary};
 use reqwest::header::REFERER;
 use crate::manga_list::{add_manga, get_mangas};
 use crate::structs::{Scraper, SearchResult};
+use crate::utils::get_manga_starting_chapter;
 
 mod scraper;
 mod manga_list;
 mod selectors;
 mod structs;
+mod utils;
 
 fn main() -> Result<()> {
     let matches = Command::new("mangalike")
@@ -22,7 +24,7 @@ fn main() -> Result<()> {
         .version("0.1")
         .subcommand_required(true)
         .arg_required_else_help(true)
-        .author("SergioMarquina/YusufOzmen01")
+        .author("YusufOzmen01")
         .subcommand(
             Command::new("create")
                 .short_flag('c')
@@ -84,12 +86,12 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
-            let mangas = get_mangas(current_dir.to_str().unwrap().to_string())?;
+            let mangas = get_mangas(&current_dir)?;
             if let Some(mangas) = mangas {
                 for manga in mangas {
                     let manga_folder = Path::new(&current_dir).join(format!("{} - {}", &manga.id, &manga.title));
                     let chapter_order = fs::read_to_string(Path::new(&manga_folder).join("order.txt"))?;
-                    let chapters = chapter_order.split("\n");
+                    let chapters = chapter_order.split('\n');
 
                     let mut epub =EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap();
                     let mut builder = epub.metadata("title", manga.clone().title).unwrap();
@@ -158,14 +160,26 @@ fn main() -> Result<()> {
 
             let client = reqwest::blocking::Client::new();
 
-            let mangas = get_mangas(current_dir.to_str().unwrap().to_string())?;
+            let mangas = get_mangas(&current_dir)?;
             if let Some(mangas) = mangas {
                 for manga in mangas {
                     let chapters = scraper.get_chapters(manga.clone().id.trim().to_string())?;
 
                     if let Some(chapters) = chapters {
-                        let chapters = chapters.into_iter().rev().collect::<Vec<SearchResult>>();
+                        let mut chapters = chapters.into_iter().rev().collect::<Vec<SearchResult>>();
                         let manga_folder = Path::new(&current_dir).join(format!("{} - {}", &manga.id, &manga.title));
+
+                        let mut starting = 0;
+
+                        for (i, chapter) in chapters.clone().iter().enumerate() {
+                            if let Ok(Some(starting_chapter)) = get_manga_starting_chapter(manga.id.clone(), current_dir.to_str().unwrap().to_string()) {
+                                if chapter.id == starting_chapter {
+                                    starting = i as i32;
+                                }
+                            }
+                        }
+
+                        chapters.drain(0..starting as usize);
 
                         if let Ok(mut order) = File::create(Path::new(&manga_folder).join("order.txt")) {
                             for chapter in chapters.clone() {
@@ -221,11 +235,11 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
-            let query = query.get_many::<String>("name").unwrap().collect::<Vec<&String>>();
-            let query = query.get(0).unwrap().to_owned().to_owned();
+            let query_vec = query.get_many::<String>("name").unwrap().collect::<Vec<&String>>();
+            let query_str = query_vec.get(0).unwrap().to_owned().to_owned();
 
             println!("Searching...");
-            let results = scraper.search_manga(query)?;
+            let results = scraper.search_manga(query_str)?;
 
             if results.is_none() {
                 println!("No results found.");
