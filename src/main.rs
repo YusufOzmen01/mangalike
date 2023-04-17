@@ -11,7 +11,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reqwest::header::REFERER;
 use crate::manga_list::{add_manga, get_mangas};
 use crate::structs::{Scraper, SearchResult};
-use crate::utils::get_manga_starting_chapter;
+use crate::utils::{get_manga_starting_chapter};
 
 mod scraper;
 mod manga_list;
@@ -89,6 +89,21 @@ fn main() -> Result<()> {
 
             let mangas = get_mangas(&current_dir)?;
             if let Some(mangas) = mangas {
+                let m = MultiProgress::new();
+
+                let stopped = ProgressStyle::with_template(
+                    "{msg} [{elapsed_precise}] {bar:40.burgundy/red} {pos:>7}/{len:7}",
+                ).unwrap().progress_chars("▮-");
+
+                let started = ProgressStyle::with_template(
+                    "{msg} [{elapsed_precise}] {bar:40.green/green} {pos:>7}/{len:7}",
+                ).unwrap().progress_chars("▮-");
+
+                let manga_pb = m.add(ProgressBar::new(mangas.len() as u64));
+
+                manga_pb.set_style(started.clone());
+                m.println("Starting export...")?;
+
                 for manga in mangas {
                     let manga_folder = Path::new(&current_dir).join(format!("{} - {}", &manga.id, &manga.title));
                     let chapter_order = fs::read_to_string(Path::new(&manga_folder).join("order.txt"))?;
@@ -96,6 +111,11 @@ fn main() -> Result<()> {
 
                     let mut epub =EpubBuilder::new(ZipLibrary::new().unwrap()).unwrap();
                     let mut builder = epub.metadata("title", manga.clone().title).unwrap();
+
+                    let chapter_pb = m.insert_after(&manga_pb, ProgressBar::new(chapters.clone().count() as u64));
+                    chapter_pb.set_style(stopped.clone());
+
+                    chapter_pb.inc(1);
 
                     for (i, chapter) in chapters.clone().enumerate() {
                         let chapter_folder = Path::new(&manga_folder).join(chapter);
@@ -126,7 +146,15 @@ fn main() -> Result<()> {
                         builder = builder.add_content(
                             EpubContent::new(format!("chapter-{}.xhtml", i), body.as_bytes())
                                 .title(format!("Chapter {}", chapter))
-                        ).unwrap()
+                        ).unwrap();
+
+                        chapter_pb.set_style(started.clone());
+                        let mut message = format!("Chapter: [{}]", chapter);
+                        for _ in 0..30 - message.len() as u32 {
+                            message += " ";
+                        }
+                        chapter_pb.set_message(message);
+                        chapter_pb.inc(1);
                     }
 
                     let exports = Path::new(&current_dir).join("exports");
@@ -139,9 +167,20 @@ fn main() -> Result<()> {
                         fs::remove_file(&file_path)?;
                     }
 
+                    m.println("Generating epub...")?;
                     let file = File::create(file_path)?;
                     builder.generate(file).unwrap();
+                    m.println("Epub generated!")?;
+
+                    let mut message = format!("Manga: [{}]", manga.id);
+                    for _ in 0..30 - message.len() as u32 {
+                        message += " ";
+                    }
+                    manga_pb.set_message(message);
+                    manga_pb.inc(1);
                 }
+
+                m.clear()?;
             }
 
             println!("All mangas exported as epub!");
@@ -176,7 +215,11 @@ fn main() -> Result<()> {
                 ).unwrap().progress_chars("▮-");
 
                 manga_pb.set_style(started.clone());
-                manga_pb.set_message("Manga   [Checking]: ");
+                let mut message = String::from("Manga [Checking]:");
+                for _ in 0..30 - message.len() as u32 {
+                    message += " ";
+                }
+                manga_pb.set_message(message);
 
                 m.println("Starting synchronization...")?;
                 manga_pb.inc(1);
@@ -229,8 +272,18 @@ fn main() -> Result<()> {
                                     loop {
                                         let image_path = Path::new(&chapter_folder).join(format!("{}.jpg", i));
                                         if image_path.exists() {
-                                            manga_pb.set_message("Manga   [Checking]: ");
-                                            chapter_pb.set_message("Chapter [Checking]: ");
+                                            let mut message = format!("Manga [{} Checking]:", manga.id);
+                                            for _ in 0..30 - message.len() as u32 {
+                                                message += " ";
+                                            }
+
+                                            manga_pb.set_message(message);
+
+                                            let mut message = format!("Chapter [{} Checking]:", chapter.id);
+                                            for _ in 0..30 - message.len() as u32 {
+                                                message += " ";
+                                            }
+                                            chapter_pb.set_message(message);
 
                                             image_pb.inc(1);
 
@@ -248,8 +301,18 @@ fn main() -> Result<()> {
                                             image_pb.set_style(started.clone());
                                             chapter_pb.set_style(started.clone());
 
-                                            manga_pb.set_message("Manga:  ");
-                                            image_pb.set_message("Image:  ");
+
+                                            let mut message = format!("Manga [{}]:", manga.id);
+                                            for _ in 0..30 - message.len() as u32 {
+                                                message += " ";
+                                            }
+                                            manga_pb.set_message(message);
+
+                                            let mut message = String::from("Image:");
+                                            for _ in 0..30 - message.len() as u32 {
+                                                message += " ";
+                                            }
+                                            image_pb.set_message(message);
                                             image_pb.inc(1);
 
                                             break;
@@ -258,12 +321,20 @@ fn main() -> Result<()> {
                                 }
                             }
 
-                            chapter_pb.set_message("Chapter:");
+                            let mut message = format!("Chapter [{}]:", chapter.id);
+                            for _ in 0..30 - message.len() as u32 {
+                                message += " ";
+                            }
+                            chapter_pb.set_message(message);
                             chapter_pb.inc(1);
                         }
                     }
 
-                    manga_pb.set_message("Manga:  ");
+                    let mut message = format!("Manga [{}]:", manga.id);
+                    for _ in 0..30 - message.len() as u32 {
+                        message += " ";
+                    }
+                    manga_pb.set_message(message);
                     manga_pb.inc(1);
                 }
 
