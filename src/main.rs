@@ -7,6 +7,7 @@ use std::path::Path;
 use clap::{Arg, ArgAction, Command};
 use color_eyre::Result;
 use epub_builder::{EpubBuilder, EpubContent, ZipLibrary};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reqwest::header::REFERER;
 use crate::manga_list::{add_manga, get_mangas};
 use crate::structs::{Scraper, SearchResult};
@@ -162,10 +163,33 @@ fn main() -> Result<()> {
 
             let mangas = get_mangas(&current_dir)?;
             if let Some(mangas) = mangas {
+                let m = MultiProgress::new();
+
+                let manga_pb = m.add(ProgressBar::new(mangas.len() as u64));
+
+                let stopped = ProgressStyle::with_template(
+                    "{msg} [{elapsed_precise}] {bar:40.burgundy/red} {pos:>7}/{len:7}",
+                ).unwrap().progress_chars("▮-");
+
+                let started = ProgressStyle::with_template(
+                    "{msg} [{elapsed_precise}] {bar:40.green/green} {pos:>7}/{len:7}",
+                ).unwrap().progress_chars("▮-");
+
+                manga_pb.set_style(started.clone());
+                manga_pb.set_message("Manga   [Checking]: ");
+
+                m.println("Starting synchronization...")?;
+                manga_pb.inc(1);
+
                 for manga in mangas {
                     let chapters = scraper.get_chapters(manga.clone().id.trim().to_string())?;
 
                     if let Some(chapters) = chapters {
+                        let chapter_pb = m.insert_after(&manga_pb, ProgressBar::new(chapters.len() as u64));
+                        chapter_pb.set_style(stopped.clone());
+
+                        chapter_pb.inc(1);
+
                         let mut chapters = chapters.into_iter().rev().collect::<Vec<SearchResult>>();
                         let manga_folder = Path::new(&current_dir).join(format!("{} - {}", &manga.id, &manga.title));
 
@@ -188,36 +212,62 @@ fn main() -> Result<()> {
                             }
                         }
 
-                        for (i, chapter) in chapters.iter().enumerate() {
+                        for chapter in chapters {
                             let chapter_folder = Path::new(&current_dir).join(format!("{} - {}", &manga.id, &manga.title)).join(chapter.clone().id);
 
-                            if chapter_folder.exists() {
-                                continue;
+                            if !chapter_folder.exists() {
+                                fs::create_dir(&chapter_folder)?;
                             }
-
-                            fs::create_dir(&chapter_folder)?;
 
                             let images = scraper.get_chapter_images(manga.clone().id, chapter.clone().id)?;
 
                             if let Some(images) = images {
-                                for (j, image) in images.iter().enumerate() {
+                                let image_pb = m.insert_after(&chapter_pb, ProgressBar::new(images.len() as u64));
+                                image_pb.set_style(stopped.clone());
+
+                                for (i, image) in images.iter().enumerate() {
                                     loop {
+                                        let image_path = Path::new(&chapter_folder).join(format!("{}.jpg", i));
+                                        if image_path.exists() {
+                                            manga_pb.set_message("Manga   [Checking]: ");
+                                            chapter_pb.set_message("Chapter [Checking]: ");
+
+                                            image_pb.inc(1);
+
+                                            break;
+                                        }
+
                                         let resp = client.get(image).header(REFERER, "https://chapmanganato.com/").send();
                                         if let Ok(mut resp) = resp {
-                                            let mut out = File::create(Path::new(&chapter_folder).join(format!("{}.jpg", j)))?;
+                                            let mut out = File::create(&image_path)?;
 
                                             io::copy(&mut resp, &mut out)?;
 
-                                            println!("{}/{} - {}/{}", i+1, chapters.len(), j+1, images.len());
+                                            // println!("{}/{} - {}/{}", i+1, chapters.len(), j+1, images.len());
+
+                                            image_pb.set_style(started.clone());
+                                            chapter_pb.set_style(started.clone());
+
+                                            manga_pb.set_message("Manga:  ");
+                                            image_pb.set_message("Image:  ");
+                                            image_pb.inc(1);
 
                                             break;
                                         }
                                     }
                                 }
                             }
+
+                            chapter_pb.set_message("Chapter:");
+                            chapter_pb.inc(1);
                         }
                     }
+
+                    manga_pb.set_message("Manga:  ");
+                    manga_pb.inc(1);
                 }
+
+                m.clear()?;
             }
 
             println!("Library synced successfully!");
