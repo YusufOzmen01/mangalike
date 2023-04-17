@@ -12,8 +12,6 @@ pub fn get_manga_starting_chapter(manga_id: String, cwd: String) -> Result<Optio
         let parts = line.splitn(2, '=').collect::<Vec<_>>();
 
         if parts.len() != 2 {
-            println!("Error parsing line {}", i);
-
             return Ok(None);
         }
 

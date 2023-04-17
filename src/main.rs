@@ -308,6 +308,12 @@ fn main() -> Result<()> {
                                             }
                                             manga_pb.set_message(message);
 
+                                            let mut message = format!("Chapter [{}]:", chapter.id);
+                                            for _ in 0..30 - message.len() as u32 {
+                                                message += " ";
+                                            }
+                                            chapter_pb.set_message(message);
+
                                             let mut message = String::from("Image:");
                                             for _ in 0..30 - message.len() as u32 {
                                                 message += " ";
