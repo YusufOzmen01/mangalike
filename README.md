@@ -8,9 +8,10 @@ App is still WIP so bugs are expected. You can create an issue or a pull request
 
 ```
 ./mangalike 
-    -s, --sync   // Sync your mangas
-    -c, --create // Create a library in the folder you're in
-    -e, --export // Export all of your mangas in exports folder
+    -s, --sync                      // Sync your mangas
+    -c, --create                    // Create a library in the folder you're in
+    -e, --export                    // Export all of your mangas in exports folder
+    -q, --query [-n, --name "NAME"] // Query a manga to add to your library
 ```
 
 ## mangalike.toml
